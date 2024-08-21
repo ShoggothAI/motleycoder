@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Dict
 
 from grep_ast import TreeContext
 
@@ -10,9 +10,20 @@ class RenderCode:
         self.tree_cache = {}
         self.code_map = {}
 
-    def to_tree(self, tags: List[Tag | tuple]) -> str:
+    def to_tree(
+        self,
+        tags: List[Tag | tuple],
+        render_file_name: bool = True,
+        additional_lines: Optional[Dict[str, List[int]]] = None,
+    ) -> str:
         if not tags:
             return ""
+
+        additional_lines = additional_lines or {}
+
+        assert (
+            render_file_name or len(set(tag.fname for tag in tags)) <= 1
+        ), "can't render without filenames if there are multiple files"
 
         tags = sorted(tags, key=lambda x: tuple(x))
 
@@ -30,11 +41,17 @@ class RenderCode:
             if this_rel_fname != cur_fname:
                 if lois is not None:
                     output += "\n"
-                    output += cur_fname + ":\n"
-                    output += self.render_tree(cur_fname, lois, code=self.code_map[cur_abs_fname])
+                    if render_file_name:
+                        output += cur_fname + ":\n"
+                    output += self.render_tree(
+                        cur_fname,
+                        lois + additional_lines.get(cur_fname, []),
+                        code=self.code_map[cur_abs_fname],
+                    )
                     lois = None
                 elif cur_fname:
-                    output += "\n" + cur_fname + "\n"
+                    if render_file_name:
+                        output += "\n" + cur_fname + "\n"
                 if type(tag) is Tag:
                     lois = []
                     cur_abs_fname = tag.fname
@@ -81,6 +98,10 @@ class RenderCode:
     def text_with_line_numbers(t: Tag) -> str:
         out = []
         for i, line in enumerate(t.text.split("\n")):
-            re_line = f"{i+1+t.line:3}│{line}"
+            re_line = RenderCode.render_line(line, i + 1 + t.line)
             out.append(re_line)
         return "\n".join(out)
+
+    @staticmethod
+    def render_line(line: str, number: int) -> str:
+        return f"{number:3}│{line}"

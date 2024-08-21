@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING
 
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.tools import StructuredTool
-from motleycrew.common import logger
-from motleycrew.tools import MotleyTool
 
 from motleycoder.codemap.file_group import FileGroup
 from motleycoder.codemap.repomap import RepoMap
 from motleycoder.linter import Linter
 from motleycoder.prompts import MotleyCoderPrompts
 from motleycoder.user_interface import UserInterface
+from motleycrew.common import logger
+from motleycrew.tools import MotleyTool
 
 if TYPE_CHECKING:
     pass
@@ -100,8 +100,7 @@ class FileEditTool(MotleyTool):
 
         try:
             # self.coder.dirty_commit()  # Add the file to the repo if it's not already there
-            self.file_group.edit_file(file_path, search, replace)
-            self.invalidate_tag_graphs(file_path)
+            result, close_match = self.file_group.edit_file(file_path, search, replace)
             # self.git_repo.commit_changes(f"Edit file {file_path}")
         except Exception as err:
             logger.warning("Exception while updating file:")
@@ -110,7 +109,20 @@ class FileEditTool(MotleyTool):
             traceback.print_exc()
             return str(err)
 
+        if not result:
+            res = (
+                f"## SearchReplaceNoExactMatch: This SEARCH argument failed to exactly match "
+                f"lines in {file_path}"
+            )
+            if close_match:
+                res += (
+                    f"\nDid you mean to match some of these actual lines from {file_path}?\n"
+                    f"```\n{close_match}\n```"
+                )
+            return res
+
         self.file_group.edited_files.add(file_path)
+        self.invalidate_tag_graphs(file_path)
 
         if self.linter:
             errors = self.linter.lint(self.file_group.abs_root_path(file_path))
@@ -118,3 +130,59 @@ class FileEditTool(MotleyTool):
                 logger.error(f"Lint errors in {file_path}: {errors}")
                 if self.user_interface.confirm("Attempt to fix lint errors?"):
                     return errors
+
+
+if __name__ == "__main__":
+    from motleycoder.codemap.repomap import RepoMap
+    from motleycoder.repo import GitRepo
+
+    repo_path = "/home/ubuntu/sqlfluff"
+
+    repo = GitRepo(repo_path)
+    file_group = FileGroup(repo)
+
+    repo_map = RepoMap(
+        root=repo.root,
+        llm_name="gpt-4o",
+        repo_content_prefix=None,
+        file_group=file_group,
+        cache_graphs=True,
+    )
+
+    tool = FileEditTool(
+        file_group=file_group,
+        user_interface=UserInterface(yes=True),
+        linter=Linter(),
+        repo_map=repo_map,
+        prompts=MotleyCoderPrompts(),
+    )
+    print(
+        tool.edit_file(
+            file_path="src/sqlfluff/core/parser/segments/base.py",
+            language="python",
+            search='''def apply_fixes(self, fixes):
+        """Apply an iterable of fixes to this segment.
+    
+        Used in applying fixes if we're fixing linting errors.
+        If anything changes, this should return a new version of the segment
+        rather than mutating the original.
+    
+        Note: We need to have fixes to apply AND this must have children. In the case
+        of raw segments, they will be replaced or removed by their parent and
+        so this function should just return self.
+        """
+''',
+            replace='''def apply_fixes(self, fixes):
+        """Apply an iterable of fixes to this segment.
+    
+        Used in applying fixes if we're fixing linting errors.
+        If anything changes, this should return a new version of the segment
+        rather than mutating the original.
+    
+        Note: We need to have fixes to apply AND this must have children. In the case
+        of raw segments, they will be replaced or removed by their parent and
+        so this function should just return self.
+        """
+''',
+        )
+    )

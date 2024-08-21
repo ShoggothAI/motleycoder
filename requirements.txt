@@ -1,5 +1,10 @@
 motleycrew
-tree-sitter
+tree-sitter==0.21.3
 tree-sitter-languages
 grep-ast
 litellm
+gitpython
+rich
+diskcache
+networkx
+flake8

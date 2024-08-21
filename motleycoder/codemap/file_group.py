@@ -3,12 +3,13 @@ import os
 import os.path
 import re
 from collections import defaultdict
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Callable, List, Set
+from typing import Callable, List, Set, Optional
 
 from diskcache import Cache
 
-from ..repo import GitRepo
+from motleycoder.repo import GitRepo
 
 
 def python_file_filter(fname: str, with_tests: bool = False) -> bool:
@@ -185,14 +186,16 @@ class FileGroup:
                     break
         return set(clean_mentioned_filenames)
 
-    def get_rel_fnames_in_directory(self, abs_dir: str) -> List[str] | None:
+    def get_rel_fnames_in_directory(
+        self, abs_dir: str, level: Optional[int] = 1
+    ) -> List[str] | None:
         abs_dir = abs_dir.replace("\\", "/").rstrip("/")
         all_abs_files = self.get_all_filenames()
         # List all of the above files that are in abs_dir, but not in subdirectories of abs_dir
         matches = [
             f
             for f in all_abs_files
-            if f.startswith(abs_dir) and f.count("/") == abs_dir.count("/") + 1
+            if f.startswith(abs_dir) and (not level or f.count("/") == abs_dir.count("/") + level)
         ]
         rel_matches = [str(self.get_rel_fname(f)) for f in matches]
         return rel_matches
@@ -210,9 +213,10 @@ class FileGroup:
 
         if new_content and new_content != file_content:
             abs_path.write_text(new_content)
-            return True
+            return True, None
         else:
-            return False
+            close_match = find_similar_lines(search, file_content)
+            return False, close_match
 
 
 def prepare_content_and_lines(content):
@@ -255,7 +259,7 @@ def match_but_for_leading_whitespace(orig_chunk_lines, search_lines):
     if len(offset) > 1:
         return
 
-    return first_line_offset, offset.pop() if offset else ""
+    return first_line_offset, offset.pop() if offset else first_line_offset
 
 
 def replace_part_with_missing_leading_whitespace(orig_lines, search_lines, replace_lines):
@@ -378,6 +382,35 @@ def replace_part(text, search, replace):
         return None
 
 
+def find_similar_lines(search_lines, content_lines, threshold=0.6):
+    search_lines = search_lines.splitlines()
+    content_lines = content_lines.splitlines()
+
+    best_ratio = 0
+    best_match = None
+
+    for i in range(len(content_lines) - len(search_lines) + 1):
+        chunk = content_lines[i : i + len(search_lines)]
+        ratio = SequenceMatcher(None, search_lines, chunk).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = chunk
+            best_match_i = i
+
+    if best_ratio < threshold:
+        return ""
+
+    if best_match[0] == search_lines[0] and best_match[-1] == search_lines[-1]:
+        return "\n".join(best_match)
+
+    N = 5
+    best_match_end = min(len(content_lines), best_match_i + len(search_lines) + N)
+    best_match_i = max(0, best_match_i - N)
+
+    best = content_lines[best_match_i:best_match_end]
+    return "\n".join(best)
+
+
 def get_ident_filename_matches(idents, all_rel_fnames: List[str], max_ident_len=2):
     all_fnames = defaultdict(set)
     for fname in all_rel_fnames:
@@ -399,3 +432,52 @@ def get_ident_mentions(text):
     # \W+ matches one or more non-word characters (equivalent to [^a-zA-Z0-9_]+)
     words = set(re.split(r"\W+", text))
     return words
+
+
+if __name__ == "__main__":
+    text = """
+517│    def _convert(self, val: Any) -> Any:
+518│        '''Convert `val` to an appropriate type for the element's VR.'''
+519│        # If the value is a byte string and has a VR that can only be encoded
+520│        # using the default character repertoire, we convert it to a string
+521│        # here to allow for byte string input in these cases
+522│        if _is_bytes(val) and self.VR in (
+523│                'AE', 'AS', 'CS', 'DA', 'DS', 'DT', 'IS', 'TM', 'UI', 'UR'):
+524│            val = val.decode()
+525│
+526│        if self.VR == 'IS':
+527│            return pydicom.valuerep.IS(val)
+528│        elif self.VR == 'DA' and config.datetime_conversion:
+529│            return pydicom.valuerep.DA(val)
+530│        elif self.VR == 'DS':
+531│            return pydicom.valuerep.DS(val)
+532│        elif self.VR == 'DT' and config.datetime_conversion:
+533│            return pydicom.valuerep.DT(val)
+534│        elif self.VR == 'TM' and config.datetime_conversion:
+535│            return pydicom.valuerep.TM(val)
+536│        elif self.VR == "UI":
+537│            return UID(val) if val is not None else None
+538│        elif self.VR == "PN":
+539│            return PersonName(val)
+540│        elif self.VR == "AT" and (val == 0 or val):
+541│            return val if isinstance(val, BaseTag) else Tag(val)
+542│        # Later may need this for PersonName as for UI,
+543│        #    but needs more thought
+544│        # elif self.VR == "PN":
+545│        #    return PersonName(val)
+546│        else:  # is either a string or a type 2 optionally blank string
+547│            return val  # this means a "numeric" value could be empty string ""
+548│        # except TypeError:
+549│            # print "Could not convert value '%s' to VR '%s' in tag %s" \
+550│            # % (repr(val), self.VR, self.tag)
+551│        # except ValueError:
+552│            # print "Could not convert value '%s' to VR '%s' in tag %s" \
+553│            # % (repr(val), self.VR, self.tag)
+"""
+    search = """else:  # is either a string or a type 2 optionally blank string
+"""
+    replace = """elif self.VR == "OL":
+    return bytes(val)
+else:  # is either a string or a type 2 optionally blank string
+"""
+    print(replace_part(text, search, replace))

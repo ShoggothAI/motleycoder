@@ -1,12 +1,15 @@
 import os.path
 from collections import deque
+from pathlib import Path
 from typing import Optional
 
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.tools import StructuredTool
-from motleycrew.tools import MotleyTool
 
+from motleycoder.codemap.file_group import FileGroup
 from motleycoder.codemap.repomap import RepoMap
+from motleycoder.repo import GitRepo
+from motleycrew.tools import MotleyTool
 
 
 class InspectObjectToolInput(BaseModel):
@@ -21,8 +24,8 @@ class InspectEntityTool(MotleyTool):
         self,
         repo_map: RepoMap,
         show_other_files: bool = False,
-        max_lines_long=200,
-        max_lines_short=25,
+        max_lines_long=400,
+        max_lines_short=50,
         block_identical_calls=2,
     ):
         self.repo_map = repo_map
@@ -52,21 +55,44 @@ class InspectEntityTool(MotleyTool):
     def get_object_summary(
         self, entity_name: Optional[str] = None, file_name: Optional[str] = None
     ) -> str:
+        entity_name = entity_name or None
+        file_name = file_name or None
+
         if entity_name is None and file_name is None:
             return "Please supply either the file name or the entity name"
 
         if entity_name is not None:
-            entity_name = entity_name.replace("()", "")
+            entity_name = entity_name.strip().replace("()", "")
 
         if (entity_name, file_name) in self.requested_tags:
             return (
-                "You've already requested this entity recently. "
-                "You MUST use existing information or request a different entity."
+                "You've already requested this entity recently, its contents are visible above. "
+                "Please use existing information or request a different entity."
             )
         else:
             self.requested_tags.append((entity_name, file_name))
 
         tag_graph = self.repo_map.get_tag_graph(with_tests=True)
+
+        if not entity_name:
+            abs_file_path = self.repo_map.file_group.abs_root_path(file_name)
+            try:
+                file_content = Path(abs_file_path).read_text()
+            except FileNotFoundError:
+                return f"File {file_name} not found in the repo"
+            except IsADirectoryError:
+                files = self.repo_map.file_group.get_rel_fnames_in_directory(
+                    abs_file_path, level=None
+                )
+                return f"{file_name} is a directory. Files in it:\n{"\n".join(sorted(files))}"
+
+            if not file_content:
+                return f"File {file_name} is empty"
+
+            return tag_graph.get_file_representation(
+                file_name=abs_file_path,
+                file_content=file_content,
+            )
 
         out = ""
 
@@ -91,24 +117,31 @@ class InspectEntityTool(MotleyTool):
             else:
                 return f"File {file_name} not found in the repo"
 
-        elif len(re_tags) == 1:
-            out += tag_graph.get_tag_representation(
-                re_tags[0],
-                parent_details=True,
-                max_lines=self.max_lines_long,
-                force_include_full_text=True,
-            )
-            candidate_dirs = [self.to_dir(re_tags[0].fname)]
+        elif all(
+            tag.fname == re_tags[0].fname and tag.full_name == re_tags[0].full_name
+            for tag in re_tags
+        ):
+            repr_parts = [
+                tag_graph.get_tag_representation(
+                    t,
+                    parent_details=True,
+                    max_lines=self.max_lines_long,
+                    force_include_full_text=True,
+                )
+                for t in re_tags
+            ]
+            out += "\n".join(repr_parts)
+            candidate_dirs = [self.to_dir(t.fname) for t in re_tags]
         else:  # Can get multiple tags eg when requesting a whole file
             # TODO: this could be neater
-            repr = "\n".join(
-                [
-                    tag_graph.get_tag_representation(
-                        t, parent_details=False, max_lines=self.max_lines_short
-                    )
-                    for t in re_tags
-                ]
-            )
+            repr_parts = [
+                tag_graph.get_tag_representation(
+                    t, parent_details=False, max_lines=self.max_lines_short
+                )
+                for t in re_tags
+            ]
+            repr = "\n".join(repr_parts)
+
             if len(repr.split("\n")) < self.max_lines_long:
                 out += repr
             else:
@@ -119,8 +152,9 @@ class InspectEntityTool(MotleyTool):
                     fnames = sorted(list(set(t.rel_fname for t in re_tags)))
 
                     out += (
-                        "There are too many matches for the given query in the repo."
-                        "Here are the files that match the query:\n"
+                        "There are too many matches for the given query in the repo. "
+                        "You can narrow down the search by specifying the file and/or entity name "
+                        "more precisely. Here are the files that match the query:\n"
                     )
                     out += "\n".join(fnames)
 
@@ -147,3 +181,28 @@ class InspectEntityTool(MotleyTool):
             return abs_dir
         else:
             return None
+
+
+if __name__ == "__main__":
+    from motleycoder.codemap.repomap import RepoMap
+
+    repo_path = "/home/ubuntu/pytest"
+
+    repo = GitRepo(repo_path)
+    file_group = FileGroup(repo)
+
+    repo_map = RepoMap(
+        root=repo.root,
+        llm_name="gpt-4o",
+        repo_content_prefix=None,
+        file_group=file_group,
+        cache_graphs=True,
+    )
+
+    tool = InspectEntityTool(repo_map)
+    print(
+        tool.get_object_summary(
+            file_name="src/_pytest/assertion/util.py",
+            entity_name="_compare_eq_sequence",
+        )
+    )

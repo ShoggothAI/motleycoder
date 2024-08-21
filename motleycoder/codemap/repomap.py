@@ -1,10 +1,12 @@
+import json
 import os
 import warnings
-from typing import List, Set, Optional, Callable
+from typing import List, Set, Optional
 
+import litellm
 from langchain_core.pydantic_v1 import BaseModel, Field
-from motleycrew.common import logger
 
+from motleycrew.common import logger
 from .file_group import (
     FileGroup,
     get_ident_mentions,
@@ -25,7 +27,7 @@ class RepoMap:
         self,
         map_tokens: int = 1024,
         root: Optional[str] = None,
-        token_count: Optional[Callable] = None,
+        llm_name: Optional[str] = None,
         repo_content_prefix: Optional[str] = None,
         verbose: bool = False,
         file_group: FileGroup = None,
@@ -41,11 +43,25 @@ class RepoMap:
 
         self.max_map_tokens = map_tokens
 
-        self.token_count = token_count
+        self.llm_name = llm_name
         self.repo_content_prefix = repo_content_prefix
         self.file_group = file_group
         self.code_renderer = RenderCode()
         self.tag_graphs = {} if cache_graphs else None
+
+    def tokenizer(self, text):
+        return litellm.encode(model=self.llm_name, text=text)
+
+    def token_count(self, messages):
+        if not self.tokenizer:
+            return
+
+        if type(messages) is str:
+            llm_input = messages
+        else:
+            llm_input = json.dumps(messages)
+
+        return len(self.tokenizer(llm_input))
 
     def get_repo_map(
         self,

@@ -2,8 +2,6 @@ from pathlib import Path, PurePosixPath
 
 import git
 
-from aider import utils
-
 
 class GitRepo:
     def __init__(self, repo_path):
@@ -58,7 +56,7 @@ class GitRepo:
 
     def abs_root_path(self, path):
         res = Path(self.root) / path
-        return utils.safe_abs_path(res)
+        return str(res.resolve())
 
     def get_dirty_files(self):
         """

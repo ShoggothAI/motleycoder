@@ -105,7 +105,11 @@ def extract_python_docstring(code: str) -> str | None:
     import ast
 
     # Parse the code into an AST
-    tree = ast.parse(code)
+    try:
+        tree = ast.parse(code)
+    except Exception as e:
+        logger.error(f"Error parsing python code: {e}")
+        return None
 
     # Initialize the docstring variable
     docstring = None

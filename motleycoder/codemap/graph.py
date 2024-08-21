@@ -4,8 +4,8 @@ from collections import defaultdict
 from typing import List, Optional, Dict
 
 import networkx as nx
-from motleycrew.common import logger
 
+from motleycrew.common import logger
 from .render import RenderCode
 from .tag import Tag
 
@@ -115,7 +115,7 @@ class TagGraph(nx.MultiDiGraph):
                     out.extend(
                         [
                             "Referenced entities summary:",
-                            self.code_renderer.to_tree(children),
+                            chlidren_summary,
                         ]
                     )
             return "\n".join(out)
@@ -128,6 +128,65 @@ class TagGraph(nx.MultiDiGraph):
                 [tag] + [c for c in children if c.name not in builtins_by_lang.get(c.language, [])]
             )
             return tag_repr
+
+    def search_line_in_tags(self, tags: List[Tag], line: int) -> Tag | None:
+        """
+        Search for a line in a list of tags, assuming the tags belong to the same file
+        :param tags: The tags to search
+        :param line: The line number to search for
+        :return: The tag that contains the line, or None if not found
+        """
+        if not tags:
+            return None
+
+        filename = tags[0].rel_fname
+        for tag in tags:
+            assert tag.rel_fname == filename, "Tags must belong to the same file"
+
+            if tag.line <= line <= tag.end_line:
+                return tag
+        return None
+
+    def get_file_representation(self, file_name: str, file_content: str, max_lines=500) -> str:
+        """
+        Get a representation of a file, with a maximum number of lines
+        :param file_name: The file name
+        :param max_lines: The maximum number of lines to include
+        :return: A string representation of the file
+        """
+        tags = [t for t in self.nodes if t.fname == file_name]
+        if not tags:
+            if not file_content:
+                raise ValueError(f"No tags found for file {file_name} and no content provided")
+
+            file_lines = file_content.split("\n")
+            file_repr = "\n".join(
+                [
+                    self.code_renderer.render_line(line, i + 1)
+                    for i, line in enumerate(file_content.split("\n")[:max_lines])
+                ]
+            )
+            if len(file_lines) > max_lines + 1:
+                return file_repr + f"\n... and {len(file_lines) - max_lines} more lines"
+
+            return file_repr
+
+        root_tags = [t for t in tags if not t.parent_names]
+        file_lines = file_content.split("\n")
+        line_nums_to_display = []
+
+        i = 0
+        while i < len(file_lines):
+            tag = self.search_line_in_tags(root_tags, i)
+            if tag is not None:
+                i = tag.end_line + 1
+            else:
+                line_nums_to_display.append(i)
+                i += 1
+
+        return self.code_renderer.to_tree(
+            tags, additional_lines={tags[0].rel_fname: line_nums_to_display}
+        )
 
     def get_tag_from_filename_lineno(
         self, fname: str, line_no: int, try_next_line=True
@@ -309,7 +368,7 @@ def only_defs(tag_graph: TagGraph) -> TagGraph:
     for u, v, data in tag_graph.edges(data=True):
         if u.kind == "def" and v.kind != "def":
             for _, v_desc in tag_graph.out_edges(v):
-                if v_desc.kind == "def":
+                if v_desc.kind == "def" and v_desc != u:
                     data["include_in_summary"] = (
                         v.n_defs <= 2
                     )  # Skip entries with more than 2 definition candidates
