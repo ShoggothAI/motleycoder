@@ -38,8 +38,8 @@ class InspectEntityTool(MotleyTool):
         langchain_tool = StructuredTool.from_function(
             func=self.get_object_summary,
             name="inspect_entity",
-            description=""""Get the code of the entity with a given name, 
-            including summary of the entities it references. Valid entities 
+            description=""""Get the code of the entity with a given name,
+            including summary of the entities it references. Valid entities
             are function names, class names, method names (prefix them by method name to disambiguate, like "Foo.bar")
 
             ONLY supply the file name/relative path if you need it to disambiguate the entity name,
@@ -82,7 +82,7 @@ class InspectEntityTool(MotleyTool):
                 return f"File {file_name} not found in the repo"
             except IsADirectoryError:
                 files = self.repo_map.file_group.get_rel_fnames_in_directory(
-                    abs_file_path, level=None
+                    abs_file_path, level=None, with_tests=True
                 )
                 return f"{file_name} is a directory. Files in it:\n{"\n".join(sorted(files))}"
 
@@ -162,7 +162,7 @@ class InspectEntityTool(MotleyTool):
 
         files = set(
             sum(
-                [self.repo_map.file_group.get_rel_fnames_in_directory(d) for d in candidate_dirs],
+                [self.repo_map.file_group.get_rel_fnames_in_directory(d, with_tests=True) for d in candidate_dirs],
                 [],
             )
         )
@@ -186,7 +186,7 @@ class InspectEntityTool(MotleyTool):
 if __name__ == "__main__":
     from motleycoder.codemap.repomap import RepoMap
 
-    repo_path = "/home/ubuntu/pytest"
+    repo_path = "/Users/whimo/codegen/motleycrew"
 
     repo = GitRepo(repo_path)
     file_group = FileGroup(repo)
@@ -202,7 +202,6 @@ if __name__ == "__main__":
     tool = InspectEntityTool(repo_map)
     print(
         tool.get_object_summary(
-            file_name="src/_pytest/assertion/util.py",
-            entity_name="_compare_eq_sequence",
+            file_name="tests"
         )
     )

@@ -243,16 +243,16 @@ class RepoMap:
 
 
 def search_terms_from_message(message: str, llm) -> Set[str]:
-    search_prompt = f"""You are an expert bug fixer. You are given a bug report. 
+    search_prompt = f"""You are an expert bug fixer. You are given a bug report.
         Return a JSON list of at most 10 strings extracted from the bug report, that should be used
-        in a full-text search of the codebase to find the part of the code that needs to be modified. 
+        in a full-text search of the codebase to find the part of the code that needs to be modified.
         Select at most 10 strings that are most likely to be unique to the part of the code that needs to be modified.
         ONLY extract strings that you could expect to find verbatim in the code, especially function names,
-        class names, and error messages. 
-        For method calls, such as `foo.bar()`, extract `.bar(` 
+        class names, and error messages.
+        For method calls, such as `foo.bar()`, extract `.bar(`
 
-        For error messages, extract the bits of the error message that are likely to be found VERBATIM in the code, 
-        for example "File not found: " rather than "File not found: /amger/gae/doc.tcx"; 
+        For error messages, extract the bits of the error message that are likely to be found VERBATIM in the code,
+        for example "File not found: " rather than "File not found: /amger/gae/doc.tcx";
         return "A string is required" rather than "A string is required, not 'MyWeirdClassName'".
 
         Here is the problem description:

@@ -187,10 +187,13 @@ class FileGroup:
         return set(clean_mentioned_filenames)
 
     def get_rel_fnames_in_directory(
-        self, abs_dir: str, level: Optional[int] = 1
+        self,
+        abs_dir: str,
+        level: Optional[int] = 1,
+        with_tests: bool = False,
     ) -> List[str] | None:
         abs_dir = abs_dir.replace("\\", "/").rstrip("/")
-        all_abs_files = self.get_all_filenames()
+        all_abs_files = self.get_all_filenames(with_tests=with_tests)
         # List all of the above files that are in abs_dir, but not in subdirectories of abs_dir
         matches = [
             f
@@ -225,41 +228,32 @@ def prepare_content_and_lines(content):
     lines = content.splitlines(keepends=True)
 
     lines_without_numbers = [re.sub(r"^\d+\s*│", "", line) for line in lines]
-    return content, lines_without_numbers
+    return "".join(lines_without_numbers), lines_without_numbers
 
 
-def perfect_replace_part(orig_lines, search_lines, replace_lines):
-    search_tup = tuple(search_lines)
-    search_len = len(search_lines)
-
-    for i in range(len(orig_lines) - search_len + 1):
-        orig_tup = tuple(orig_lines[i : i + search_len])
-        if search_tup == orig_tup:
-            res = orig_lines[:i] + replace_lines + orig_lines[i + search_len :]
-            return "".join(res)
+def perfect_replace_part(orig_content, search_content, replace_content):
+    if search_content in orig_content:
+        return orig_content.replace(search_content, replace_content)
 
 
-def match_but_for_leading_whitespace(orig_chunk_lines, search_lines):
-    num = len(orig_chunk_lines)
+def match_but_for_leading_whitespace(whole_lines, part_lines):
+    num = len(whole_lines)
 
     # does the non-whitespace all agree?
-    if not all(orig_chunk_lines[i].lstrip() == search_lines[i].lstrip() for i in range(num)):
+    if not all(whole_lines[i].lstrip() == part_lines[i].lstrip() for i in range(num)):
         return
-
-    # compute the offset of the first line independently
-    first_line_offset = orig_chunk_lines[0][: len(orig_chunk_lines[0]) - len(search_lines[0])]
 
     # are they all offset the same?
-    offset = set(
-        orig_chunk_lines[i][: len(orig_chunk_lines[i]) - len(search_lines[i])]
-        for i in range(1, num)
-        if orig_chunk_lines[i].strip()
+    add = set(
+        whole_lines[i][: len(whole_lines[i]) - len(part_lines[i])]
+        for i in range(num)
+        if whole_lines[i].strip()
     )
 
-    if len(offset) > 1:
+    if len(add) != 1:
         return
 
-    return first_line_offset, offset.pop() if offset else first_line_offset
+    return add.pop()
 
 
 def replace_part_with_missing_leading_whitespace(orig_lines, search_lines, replace_lines):
@@ -288,11 +282,7 @@ def replace_part_with_missing_leading_whitespace(orig_lines, search_lines, repla
         if add_leading is None:
             continue
 
-        first_line_add, tail_lines_add = add_leading
-
-        replace_lines = [first_line_add + replace_lines[0]] + [
-            tail_lines_add + rline if rline.strip() else rline for rline in replace_lines[1:]
-        ]
+        replace_lines = [add_leading + rline if rline.strip() else rline for rline in replace_lines]
         orig_lines = orig_lines[:i] + replace_lines + orig_lines[i + num_search_lines :]
         return "".join(orig_lines)
 
@@ -368,7 +358,7 @@ def replace_part(text, search, replace):
     search_content, search_lines = prepare_content_and_lines(search)
     replace_content, replace_lines = prepare_content_and_lines(replace)
 
-    result = perfect_replace_part(orig_lines, search_lines, replace_lines)
+    result = perfect_replace_part(orig_content, search_content, replace_content)
     if result:
         return result
 
@@ -377,7 +367,7 @@ def replace_part(text, search, replace):
         return result
 
     try:
-        return replace_with_dotdotdots(orig_content, search, replace)
+        return replace_with_dotdotdots(orig_content, search_content, replace_content)
     except ValueError:
         return None
 
@@ -474,10 +464,9 @@ if __name__ == "__main__":
 552│            # print "Could not convert value '%s' to VR '%s' in tag %s" \
 553│            # % (repr(val), self.VR, self.tag)
 """
-    search = """else:  # is either a string or a type 2 optionally blank string
-"""
+    search = """else:  # is either a string or a type 2 optionally blank string"""
     replace = """elif self.VR == "OL":
-    return bytes(val)
-else:  # is either a string or a type 2 optionally blank string
+            return bytes(val)
+        else:  # is either a string or a type 2 optionally blank string
 """
     print(replace_part(text, search, replace))

@@ -5,11 +5,6 @@ from langchain_core.prompts import SystemMessagePromptTemplate, ChatPromptTempla
 
 
 class MotleyCoderPrompts:
-    repo_content_prefix = """Here are summaries of some files present in my git repository.
-Do not propose changes to these files, treat them as *read-only*.
-If you need to edit any of these files, *add them to the chat* first by calling `add_files`.
-"""
-
     files_content_prefix = """The files have been *added to the chat* so you can go ahead and edit them.
 
 *Trust this message as the true contents of the files!*
@@ -35,16 +30,16 @@ If the request is ambiguous, ask questions using the tool `return_to_user`.
 Always reply to the user in the same language they are using.
 
 Once you understand the request you MUST:
-1. Decide if you need to propose *SEARCH/REPLACE* edits to any files that haven't been added to the chat. 
-You can create new files without asking. But if you need to propose edits to existing files not already added to the chat, 
-you *MUST* call the tool `add_files` with their full path names to *add the files to the chat*. 
-Make the tool call and wait for it to report success or failure. 
+1. Decide if you need to propose *SEARCH/REPLACE* edits to any files that haven't been added to the chat.
+You can create new files without asking. But if you need to propose edits to existing files not already added to the chat,
+you *MUST* call the tool `add_files` with their full path names to *add the files to the chat*.
+Make the tool call and wait for it to report success or failure.
 You can keep calling the tool if you then decide you need to edit more files.
 2. Think step-by-step and explain the needed changes with a numbered list of short sentences.
-3. Make the changes to the files by calling the tool `edit_file` with the *SEARCH/REPLACE arguments* for each change. 
-You can keep calling the tool with new *SEARCH/REPLACE arguments* until you have made all the necessary changes. 
+3. Make the changes to the files by calling the tool `edit_file` with the *SEARCH/REPLACE arguments* for each change.
+You can keep calling the tool with new *SEARCH/REPLACE arguments* until you have made all the necessary changes.
 ONLY EVER RETURN CODE IN THE ARGUMENTS OF THE `edit_file` TOOL CALL!
-4. After making all the necessary changes, you MUST call the tool `return_to_user` to apply the changes and to inform 
+4. After making all the necessary changes, you MUST call the tool `return_to_user` to apply the changes and to inform
 the user that you have finished. You can't call any tools after this step.
 
 You have access to the following tools:

@@ -1,6 +1,6 @@
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.tools import StructuredTool
@@ -29,17 +29,18 @@ class FileEditTool(MotleyTool):
         self,
         file_group: FileGroup,
         user_interface: UserInterface,
-        linter: Linter,
         repo_map: RepoMap,
-        prompts: MotleyCoderPrompts,
+        prompts: Optional[MotleyCoderPrompts] = None,
+        linter: Optional[Linter] = None,
         name: str = "edit_file",
     ):
         # TODO: replace coder with specific components
         self.file_group = file_group
         self.user_interface = user_interface
-        self.linter = linter
         self.repo_map = repo_map
+
         self.prompts = prompts
+        self.linter = linter
 
         langchain_tool = StructuredTool.from_function(
             func=self.edit_file,
@@ -54,7 +55,10 @@ class FileEditTool(MotleyTool):
         if error_message:  # TODO: max_reflections
             return error_message
 
-        return self.prompts.file_edit_success.format(file_path=file_path)
+        if self.prompts:
+            return self.prompts.file_edit_success.format(file_path=file_path)
+
+        return f"Successfully edited file {file_path}."
 
     def prepare_file_for_edit(self, file_path: str):
         abs_path = self.file_group.abs_root_path(file_path)
@@ -74,6 +78,9 @@ class FileEditTool(MotleyTool):
             Path(abs_path).touch()
 
     def invalidate_tag_graphs(self, file_path: str):
+        if not self.repo_map.tag_graphs:
+            return
+
         for files, graph in self.repo_map.tag_graphs.copy().items():
             if file_path in files:
                 self.repo_map.tag_graphs.pop(files)
@@ -136,7 +143,7 @@ if __name__ == "__main__":
     from motleycoder.codemap.repomap import RepoMap
     from motleycoder.repo import GitRepo
 
-    repo_path = "/home/ubuntu/sqlfluff"
+    repo_path = "/Users/whimo/codegen/motleycrew"
 
     repo = GitRepo(repo_path)
     file_group = FileGroup(repo)
@@ -158,31 +165,11 @@ if __name__ == "__main__":
     )
     print(
         tool.edit_file(
-            file_path="src/sqlfluff/core/parser/segments/base.py",
+            file_path="motleycrew/agents/parent.py",
             language="python",
-            search='''def apply_fixes(self, fixes):
-        """Apply an iterable of fixes to this segment.
-    
-        Used in applying fixes if we're fixing linting errors.
-        If anything changes, this should return a new version of the segment
-        rather than mutating the original.
-    
-        Note: We need to have fixes to apply AND this must have children. In the case
-        of raw segments, they will be replaced or removed by their parent and
-        so this function should just return self.
-        """
-''',
-            replace='''def apply_fixes(self, fixes):
-        """Apply an iterable of fixes to this segment.
-    
-        Used in applying fixes if we're fixing linting errors.
-        If anything changes, this should return a new version of the segment
-        rather than mutating the original.
-    
-        Note: We need to have fixes to apply AND this must have children. In the case
-        of raw segments, they will be replaced or removed by their parent and
-        so this function should just return self.
-        """
-''',
+            search="""from motleycrew import MotleyCrew""",
+            replace="""from motleycrew import MotleyCrew
+    from a import b
+""",
         )
     )
