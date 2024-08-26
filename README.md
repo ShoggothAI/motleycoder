@@ -14,3 +14,9 @@ Please check out the [demo notebook](https://github.com/ShoggothAI/motleycoder/b
 MotleyCoder was originally designed for use with our [motleycrew](https://github.com/ShoggothAI/motleycrew) library, but its flexible nature allows using it in other contexts.
 
 Credits to [aider](https://github.com/paul-gauthier/aider) for the original idea and code of the RepoMap.
+
+## Installation
+
+```
+pip install motleycoder
+```
