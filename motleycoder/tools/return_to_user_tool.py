@@ -4,15 +4,19 @@ from motleycrew.agents import MotleyOutputHandler
 from motleycrew.common import Defaults
 from motleycrew.common.exceptions import InvalidOutput
 
+from motleycoder.user_interface import UserInterface
+
 
 class ReturnToUserTool(MotleyOutputHandler):
     _name = "return_to_user"
 
     def __init__(
         self,
+        user_interface: UserInterface,
         tests_runner: Optional[Callable] = None,
         max_iterations: int = Defaults.DEFAULT_OUTPUT_HANDLER_MAX_ITERATIONS,
     ):
+        self.user_interface = user_interface
         self.tests_runner = tests_runner
         super().__init__(max_iterations=max_iterations)
 
@@ -29,4 +33,6 @@ class ReturnToUserTool(MotleyOutputHandler):
             self._iteration = 0
             return "Maximum output handler iterations exceeded. Last test attempt failed:\n" + out
         else:
-            raise InvalidOutput("Existing tests failed:\n" + out)
+            if self.user_interface.confirm("Attempt to fix test errors?"):
+                raise InvalidOutput("Existing tests failed:\n" + out)
+            return "Last test attempt failed:\n" + out
